@@ -1,0 +1,28 @@
+Make the framework compatible with resnet structure 
+    To achieve multi-scale output (using different blocks & resolution?)    - done
+    Add some post layers?                                                   - done 
+
+Dataloader:
+    Multiple scales (This can be done in loss class)                        - done 
+    One output heatmap                                                      - done 
+
+Loss:
+    Forward the model with different resolutions, and stack different heatmaps together                     - done
+    Compute the heatmap loss (dont know whether it is supported by the distributed training)                - done 
+
+------ Debug the above modules and train on COCO to see the outcome 
+------ We can train a network using the above modules and test the overall recall & OKS curve using the closest joints approach (upper bound) ------
+
+Sampling:
+    Different sampling policy for different scale 
+    Online infer the labels 
+
+GCN:
+    Attention mechanism 
+    May need to add position encoding 
+
+GCN Loss:
+    Confidence (whether GT is included in the patch)
+    Bias (offset of the joint. What kind of normalization is needed? Or just compute the original pixel shift?)
+    Feature (triplet or circle loss can be used here.)
+
