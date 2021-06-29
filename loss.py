@@ -39,7 +39,7 @@ class ModelWithLoss(M.Model):
 			inp = F.interpolate(inp, (scale, scale))
 			out_hmap = self.model(img)[i]  # 512 -> 64, 256 -> 64, 128 -> 64
 			all_hmaps.append(out_hmap)
-		all_hmaps = torch.stack(all_hmaps, dim=0)  # [num_scales, BSize, num_pts, out_size, out_size]
+		all_hmaps = torch.stack(all_hmaps, dim=0)  # [num_scales(3), BSize, num_pts(17), out_size(64), out_size(64)]
 		hm = self.HM(outs, hmap, mask.unsqueeze(1).unsqueeze(0))
 		return hm   # May add some extra outputs for the GCN part in the future 
 
