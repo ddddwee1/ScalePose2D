@@ -41,5 +41,5 @@ class ModelWithLoss(M.Model):
 			all_hmaps.append(out_hmap)
 		all_hmaps = torch.stack(all_hmaps, dim=0)  # [num_scales(3), BSize, num_pts(17), out_size(64), out_size(64)]
 		hm = self.HM(outs, hmap, mask.unsqueeze(1).unsqueeze(0))
-		return hm   # May add some extra outputs for the GCN part in the future 
+		return hm, all_hmaps   # May add some extra outputs for the GCN part in the future 
 
