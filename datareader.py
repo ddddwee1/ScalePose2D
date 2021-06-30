@@ -195,9 +195,9 @@ class COCO_kpts(Dataset):
     def __getitem__(self, index):
         # print(index)
         idx = self.img_indices[index]
-        img = cv2.imread('./train2017/%012d.jpg' % (idx))
+        img = cv2.imread('/data/pose/coco/train2017/%012d.jpg' % (idx))
         h, w = img.shape[0], img.shape[1]
-        mask = pickle.load(open('./masks/%012d.pkl' % (idx), 'rb'))
+        mask = pickle.load(open('/data/pose/coco/masks/%012d.pkl' % (idx), 'rb'))
         mask = np.float32(mask)
         pts = self.pts_data[idx]
         pts, boxes = self._get_pts(pts, config.COCO_reorder)

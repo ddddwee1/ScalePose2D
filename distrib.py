@@ -1,5 +1,5 @@
 import os
-os.environ['CUDA_VISIBLE_DEVICES'] = '0,1,2,3'
+os.environ['CUDA_VISIBLE_DEVICES'] = '0,1,2,3,4,5,6,7'
 import torch.distributed as dist
 import torch
 import torch.nn as nn 
@@ -29,9 +29,9 @@ def main_worker(gpu, ngpus_per_node):
 	x = np.float32(np.random.random(size=[1,3,512,512]))
 	x = torch.from_numpy(x)
 	with torch.no_grad():
-		outs, idout = model_dnet(x)
+		model_dnet(x)
 	# input()
-	M.Saver(model_dnet.backbone).restore('./imagenet_pretrained_r50/', restrict=False)
+	M.Saver(model_dnet.backbone).restore('./imagenet_pretrained_r50/', strict=False)
 	model = loss.ModelWithLoss(model_dnet)
 	saver = M.Saver(model)
 	saver.restore('./model/')
@@ -43,7 +43,7 @@ def main_worker(gpu, ngpus_per_node):
 	print('Model initialized.')
 
 	# get loader 
-	loader, sampler = datareader.get_train_dataloader(32)
+	loader, sampler = datareader.get_train_dataloader(12)
 	optim = torch.optim.Adam(model.parameters(), lr=config.init_lr)
 
 	for e in range(config.max_epoch):
@@ -52,9 +52,13 @@ def main_worker(gpu, ngpus_per_node):
 		for i, (img, hmap, mask, pts) in enumerate(loader):
 			optim.zero_grad()
 			hmap_loss, outs = model(img, hmap, mask, pts)
-			# print(hmap_loss.shape)
+			if i==0:
+				print(hmap_loss.shape)
 
-			hmap_loss = hmap_loss.mean()
+			ls_large = hmap_loss[0].mean()
+			ls_medium = hmap_loss[1].mean()
+			ls_small = hmap_loss[2].mean()
+			hmap_loss = ls_large + ls_medium + ls_small
 			hmap_loss.backward()
 			optim.step()
 			lr = optim.param_groups[0]['lr']
@@ -64,11 +68,11 @@ def main_worker(gpu, ngpus_per_node):
 				visutil.vis_batch(img, outs[1], './outputs/%d_out1.jpg'%i)
 				visutil.vis_batch(img, outs[2], './outputs/%d_out2.jpg'%i)
 				visutil.vis_batch(img, hmap, './outputs/%d_gt.jpg'%i)
-				# print(outs.max(), outs.min(), hmap.max(), hmap.min(), mask.max(), mask.min())
+				print(outs.max(), outs.min(), hmap.max(), hmap.min(), mask.max(), mask.min())
 
 			if i%20==0:
 				curr_time = strftime("%Y-%m-%d %H:%M:%S", gmtime())
-				print('%s  Replica:%d  Progress:%d/%d  Ls:%.3e  LsC:%.3e  IDs:%.3e  IDd:%.3e  LR:%.1e'%(curr_time, gpu, i, len(loader), loss_total, hmap_loss, pull_loss, push_loss, lr))
+				print('%s  Replica:%d  Progress:%d/%d  LsL:%.3e  LsM:%.3e  LsS:%.3e  LR:%.1e'%(curr_time, gpu, i, len(loader), ls_large, ls_medium, ls_small, lr))
 
 		if e in config.lr_epoch:
 			newlr = lr * 0.1 

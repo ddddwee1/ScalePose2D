@@ -7,6 +7,10 @@ out_size = 64
 base_sigma = 3.5
 num_pts = 17
 
+# point index 
+COCO_index = np.int64([0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16])
+COCO_reorder = np.int64([0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16])
+
 # augmentation 
 rotation = 30
 min_scale = 0.5
