@@ -11,3 +11,9 @@ Multi-scale training, multi-scale structure and multi-scale refinement.
 ## Installation 
 
 Just install pytorch, install torchsul, and build the fastgaus. 
+
+## Usage 
+
+```
+python distrib.py 
+```
