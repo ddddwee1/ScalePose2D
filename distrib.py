@@ -52,12 +52,10 @@ def main_worker(gpu, ngpus_per_node):
 		for i, (img, hmap, mask, pts) in enumerate(loader):
 			optim.zero_grad()
 			hmap_loss, outs = model(img, hmap, mask, pts)
-			if i==0:
-				print(hmap_loss.shape)
 
-			ls_large = hmap_loss[0].mean()
-			ls_medium = hmap_loss[1].mean()
-			ls_small = hmap_loss[2].mean()
+			ls_large = hmap_loss[0]
+			ls_medium = hmap_loss[1]
+			ls_small = hmap_loss[2]
 			hmap_loss = ls_large + ls_medium + ls_small
 			hmap_loss.backward()
 			optim.step()
@@ -68,7 +66,7 @@ def main_worker(gpu, ngpus_per_node):
 				visutil.vis_batch(img, outs[1], './outputs/%d_out1.jpg'%i)
 				visutil.vis_batch(img, outs[2], './outputs/%d_out2.jpg'%i)
 				visutil.vis_batch(img, hmap, './outputs/%d_gt.jpg'%i)
-				print(outs.max(), outs.min(), hmap.max(), hmap.min(), mask.max(), mask.min())
+				# print(outs.max(), outs.min(), hmap.max(), hmap.min(), mask.max(), mask.min())
 
 			if i%20==0:
 				curr_time = strftime("%Y-%m-%d %H:%M:%S", gmtime())

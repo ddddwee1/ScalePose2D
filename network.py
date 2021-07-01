@@ -15,13 +15,18 @@ class DepthToSpace(M.Model):
 
 class OutBlock(M.Model):
     def initialize(self, outchn):
-        self.c1 = M.ConvLayer(3, outchn*4, activation=M.PARAM_RELU)
+        # It works only when batch-norm
+        self.c11 = M.ConvLayer(3, outchn, activation=M.PARAM_LRELU, batch_norm=True, usebias=False)
+        self.c12 = M.ConvLayer(1, outchn*4, usebias=False)
         self.upsample = DepthToSpace(2)
-        self.c2 = M.ConvLayer(3, config.num_pts)
+        self.c21 = M.ConvLayer(3, outchn, activation=M.PARAM_LRELU, batch_norm=True, usebias=False)
+        self.c22 = M.ConvLayer(1, config.num_pts)
     def forward(self, x):
-        x = self.c1(x)
+        x = self.c11(x)
+        x = self.c12(x)
         x = self.upsample(x)
-        x = self.c2(x)
+        x = self.c21(x)
+        x = self.c22(x)
         return x 
 
 class MultiScaleNet(M.Model):
@@ -37,7 +42,7 @@ class MultiScaleNet(M.Model):
         o2 = self.out2(fmap2)
         o3 = self.out3(fmap3)
         return o3, o2, o1
-        
+
 if __name__=='__main__':
     import torch 
     net = MultiScaleNet()

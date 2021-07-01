@@ -9,7 +9,7 @@ class HmapLoss(M.Model):
 		loss = torch.pow(hmap - gt, 2)
 		loss = loss * (1 - mask.expand_as(loss))
 		# loss = loss * (gt.detach() * 10 + 1)
-		loss = loss.mean(dim=4).mean(dim=3).mean(dim=2)
+		loss = loss.mean()
 		return loss 
 
 class ModelWithLoss(M.Model):
@@ -33,13 +33,15 @@ class ModelWithLoss(M.Model):
 			same time, the network can "see" training data in different resolution, which could be a plus.
 		'''
 		mask = mask.float()
-		all_hmaps = []
+		all_hmaps = []  # [num_scales(3), BSize, num_pts(17), out_size(64), out_size(64)]
+		all_losses = []  # [num_scales(3)]
 		for i in range(len(config.inp_scales)):
 			scale = config.inp_scales[i]
 			inp = F.interpolate(img, (scale, scale))
 			out_hmap = self.model(inp)[i]  # 512 -> 64, 256 -> 64, 128 -> 64
+			# print(out_hmap.shape, hmap.shape, mask.unsqueeze(1).shape)
+			hm = self.HM(out_hmap, hmap, mask.unsqueeze(1))
 			all_hmaps.append(out_hmap)
-		all_hmaps = torch.stack(all_hmaps, dim=0)  # [num_scales(3), BSize, num_pts(17), out_size(64), out_size(64)]
-		hm = self.HM(all_hmaps, hmap, mask.unsqueeze(1).unsqueeze(0))
-		return hm, all_hmaps   # May add some extra outputs for the GCN part in the future 
+			all_losses.append(hm)
+		return all_losses, all_hmaps   # May add some extra outputs for the GCN part in the future 
 
