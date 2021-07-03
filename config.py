@@ -4,7 +4,7 @@ import numpy as np
 inp_size = 512 
 inp_scales = [512, 256, 128]
 out_size = 64
-base_sigma = 3.5
+base_sigma = 2.5
 num_pts = 17
 
 # point index 

@@ -21,15 +21,17 @@ def vis_kpt(img, hmap, minmax=False):
 		hmap = np.clip(hmap, 0.0, 1.0)
 	hmap = np.uint8(hmap * 255)
 	hmap = cv2.applyColorMap(hmap, cv2.COLORMAP_JET)
+	# print(hmap.shape, img.shape)
 	res = cv2.addWeighted(hmap, 0.7, img, 0.3, 0)
 	return res 
 
 def vis_one(img, hmap, minmax=False):
 	img = deprocess(img)
-	img = cv2.resize(img, (config.out_size, config.out_size))
 	if len(hmap.shape)==3:
+		img = cv2.resize(img, (hmap.shape[2], hmap.shape[1]))
 		res = [vis_kpt(img, hmap[i], minmax=minmax) for i in range(hmap.shape[0])]
 	else:
+		img = cv2.resize(img, (hmap.shape[1], hmap.shape[0]))
 		res = [vis_kpt(img, hmap)]
 	return res 
 
@@ -41,7 +43,7 @@ def vis_batch(imgs, hmaps, outdir=None, minmax=False):
 		res.append(vis_one(imgs[i], hmaps[i], minmax=minmax))
 	h = len(res)
 	w = len(res[0])
-	s = config.out_size
+	s = hmaps.shape[2]
 	canvas = np.zeros([h * s, w * s, 3], dtype=np.uint8)
 	for i in range(h):
 		for j in range(w):

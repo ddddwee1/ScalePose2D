@@ -43,6 +43,26 @@ class MultiScaleNet(M.Model):
         o3 = self.out3(fmap3)
         return o3, o2, o1
 
+class SamplingLayer(M.Model):
+    def initialize(self):
+        # Sample 
+        self.nms = M.MaxPool2D(5)
+    def forward(self, hmaps, fmaps):
+        # 3 scales input and 3 scales output. All resize to config.out_size
+        # TODO: debug it with some pre-pickled heatmap & feature maps 
+        for inp_idx in range(3):
+            for out_idx in range(3):
+                hm = hmaps[inp_idx][out_idx]
+                fm = fmaps[inp_idx][out_idx]
+                hm_nms = self.nms(hm)
+                
+                bsize = hm.shape[0]
+                hm_flat = hm.reshape(bsize, config.num_pts, -1)
+                hm_nms_flat = hm_nms.reshape(bsize, config.num_pts, -1)
+                hm_idx = torch.where(hm_flat==hm_nms_flat)
+
+                print(len(hm_idx))
+
 if __name__=='__main__':
     import torch 
     net = MultiScaleNet()
