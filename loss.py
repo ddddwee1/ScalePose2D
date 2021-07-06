@@ -17,6 +17,21 @@ class ModelWithLoss(M.Model):
 		self.HM = HmapLoss()
 		self.model = model 
 
+	def run(self, img):
+		all_fmaps = []
+		all_hmaps = []
+		for i in range(len(config.inp_scales)):
+			scale = config.inp_scales[i]
+			inp = F.interpolate(img, (scale, scale))
+			o3, o2, o1, f3, f2, f1 = self.model.run(inp)
+			all_fmaps.append([f3, f2, f1])
+			all_hmaps.append([o3, o2, o1])
+		return all_fmaps, all_hmaps
+
+	def run_input(self, img):
+		o3, o2, o1, f3, f2, f1 = self.model.run(img)
+		return [f3, f2, f1], [o3, o2, o1]
+
 	def forward(self, img, hmap, mask, debugmaps=None):
 		'''
 		Some explanation:
