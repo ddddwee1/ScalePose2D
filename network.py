@@ -63,10 +63,7 @@ class SamplingLayer(M.Model):
         # print(result.shape)
         return result
 
-    def forward(self, hmap_list, fmap_list, img, k=40):
-        # The inp_scale should be emitted here, because in testing we use only one scale
-        # Make the GCN consistent between training and testing. The input scale should be randomly sampled from possible values
-        # expected output : [BSize, out_scales, 17, k, sum_feature_channels, ROIh, ROIw], [BSize, out_scales 17, k, h, w]
+    def get_joint_candidates(self, hmap_list, k=40):
         roi_candidates = [] # [out_scales, bsize, 17, k, 2]
         candidate_sizes = []
 
@@ -87,6 +84,13 @@ class SamplingLayer(M.Model):
             # store the index for inferring the roi area 
             roi_candidates.append(torch.stack([topk_w, topk_h], dim=-1))
             candidate_sizes.append(w)
+        return roi_candidates, candidate_sizes, topk_val
+
+    def forward(self, hmap_list, fmap_list, img, k=40):
+        # The inp_scale should be emitted here, because in testing we use only one scale
+        # Make the GCN consistent between training and testing. The input scale should be randomly sampled from possible values
+        # expected output : [BSize, out_scales, 17, k, sum_feature_channels, ROIh, ROIw], [BSize, out_scales 17, k, h, w]
+        roi_candidates, candidate_sizes, _ = self.get_joint_candidates(hmap_list, k=k)
         
         all_fhmap = []   # [out_scales, bsize, 17*k, channel_sum]
         for coord, size in zip(roi_candidates, candidate_sizes):
