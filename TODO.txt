@@ -14,10 +14,9 @@ Loss:
 ------ We can train a network using the above modules and test the overall recall & OKS curve using the closest joints approach (upper bound) ------
 
 Sampling:
-    Use nms (maxpool and index equalization) to select areas of interest
-    Different sampling policy for different scale (different crop size, maybe)
-    Online infer the labels (confidence, bias, instance index)
-    Debug with one image first 
+    Use nms (maxpool and index euqality) to select areas of interest                    - done 
+    Different sampling policy for different scale (different crop size, maybe)          - done 
+    Online infer the labels (confidence, bias, instance index)                          - done 
 
 GCN:
     Attention mechanism (Multi-head or single-head? Should we add a mask to constrain the shape of input size?)

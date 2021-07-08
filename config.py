@@ -6,6 +6,8 @@ inp_scales = [512, 256, 128]
 out_size = 64
 base_sigma = 2.5
 num_pts = 17
+roi_box_size = 2
+top_k_candidates = 40
 
 # point index 
 COCO_index = np.int64([0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16])

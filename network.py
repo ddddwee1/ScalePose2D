@@ -60,7 +60,6 @@ class SamplingLayer(M.Model):
         top_left = (center - box_size) * target_scale / source_scale
         btm_right = (center + box_size) * target_scale / source_scale
         result = torch.cat([top_left, btm_right], dim=-1)
-        # print(result.shape)
         return result
 
     def get_joint_candidates(self, hmap_list, k=40):
@@ -86,10 +85,10 @@ class SamplingLayer(M.Model):
             candidate_sizes.append(w)
         return roi_candidates, candidate_sizes, topk_val
 
-    def forward(self, hmap_list, fmap_list, img, k=40):
+    def forward(self, hmap_list, fmap_list, img):
         # The inp_scale should be emitted here, because in testing we use only one scale
         # Make the GCN consistent between training and testing. The input scale should be randomly sampled from possible values
-        # expected output : [BSize, out_scales, 17, k, sum_feature_channels, ROIh, ROIw], [BSize, out_scales 17, k, h, w]
+        k = config.top_k_candidates
         roi_candidates, candidate_sizes, _ = self.get_joint_candidates(hmap_list, k=k)
         
         all_fhmap = []   # [out_scales, bsize, 17*k, channel_sum]
@@ -97,24 +96,78 @@ class SamplingLayer(M.Model):
             scale_fhmap = []
             for fmap, hmap in zip(fmap_list, hmap_list):
                 w = fmap.shape[3]
-                box = self._get_bbox(coord, 2, size, w) # [bsize, 17, k, 4]
+                box = self._get_bbox(coord, config.roi_box_size, size, w) # [bsize, 17, k, 4]
                 box = box.reshape(box.shape[0], -1, 4)
                 fmap_cropped = torchvision.ops.roi_align(fmap, list(box), min(12, max(4,8*w//size))) # [bsize*17*k, chn, 7, 7]
                 fmap_cropped = fmap_cropped.reshape(bsize, config.num_pts*k, -1)  # [bsize, 17*k, chn*7*7]
 
                 w = hmap.shape[3]
-                box = self._get_bbox(coord, 2, size, w) # [bsize, 17, k, 4]
-                box = box.reshape(box.shape[0], -1, 4)
                 hmap_cropped = torchvision.ops.roi_align(hmap, list(box), 7) # [bsize*17*k, chn, 7, 7]
                 hmap_cropped = hmap_cropped.reshape(bsize, config.num_pts*k, -1) #[bsize, 17*k, chn*7*7]
-                print(fmap_cropped.shape, hmap_cropped.shape)
                 fhmap = torch.cat([fmap_cropped, hmap_cropped], dim=-1)
                 scale_fhmap.append(fhmap)  
+
+            w = img.shape[3]
+            box = self._get_bbox(coord, config.roi_box_size, size, w)
+            box = box.reshape(box.shape[0], -1, 4)
+            img_cropped = torchvision.ops.roi_align(img, list(box), 13)
+            img_cropped = img_cropped.reshape(bsize, config.num_pts*k, -1)  # [bsize, 17*k, chn*13*13]
+            scale_fhmap.append(img_cropped)
+
             scale_fhmap = torch.cat(scale_fhmap, dim=-1)
+            print(scale_fhmap.shape)
             all_fhmap.append(scale_fhmap)
-        
+
+        all_fhmap = torch.stack(all_fhmap, dim=1) # [bsize, out_scales, 17*k, chn_sum]
+        all_fhmap = all_fhmap.reshape(bsize, all_fhmap.shape[1], config.num_pts, k, all_fhmap.shape[-1]) # [bsize, out_scales, 17, k, chn_sum]
+        roi_candidates = torch.stack(roi_candidates, dim=1)   # [bsize, out_scales, 17, k, 2]
+        candidate_sizes = torch.stack(candidate_sizes)  # [out_scales]
+        return all_fhmap, roi_candidates, candidate_sizes 
+
 # TODO: Infer the labels 
 # TODO: bsize*17*k can be the data length, apply attention on this dimension 
+
+class LabelProducer(M.Model):
+    def forward(self, roi_candidates, candidate_sizes, gt_pts, mask):
+        # produce 3 labels: confidence, bias, ID tag; another flag: ignore (if the joint locates on unlabelled instances)
+        # roi_candidates: [bsize, out_scales, 17, k, 2]
+        # candidate_sizes: [out_scales]
+        # gt_pts: [max_inst, bsize, 3]
+        # mask: [bsize, out_size, out_size]
+
+        gt_pts = gt_pts.permute([1,0,2])
+        pts_xy = gt_pts[:,:,:2]   # xy [bsize, inst, 2]
+        pts_vis = gt_pts[:,:,2:3]    # ignore: [bsize, inst, 1] 0 for invisible, 1 for visible 
+
+        # get confidence 
+        scales = config.out_size / candidate_sizes
+        scales = scales.unsqueeze(-1).unsqueeze(-1).unsqueeze(-1)
+        roi_candidates = roi_candidates * scales
+        left_upper = roi_candidates - config.roi_box_size * scales 
+        right_lower = roi_candidates + config.roi_box_size * scales 
+        left_upper = left_upper.unsqueeze(4)  # [bsize, out_scales, 17, k, 1, 2]
+        right_lower = right_lower.unsqueeze(4)  
+        pts_xy = pts_xy.unsqueeze(1).unsqueeze(1).unsqueeze(1)  # [bsize, 1, 1, 1, inst, 2]
+        pts_vis = pts_vis.unsqueeze(1).unsqueeze(1).unsqueeze(1)  # [bsize, 1, 1, 1, inst, 1]
+        conf, _ = torch.max(torch.prod((pts_xy < right_lower).float() * (pts_xy > left_upper).float() * pts_vis.float(), dim=-1), -1) # [bsize, out_scales, 17, k]
+
+        # get id_tag 
+        bias = pts_xy - roi_candidates.unsqueeze(4)  # [bsize, out_scales, 17, k, inst, 2]
+        dist = torch.sum(torch.pow(bias, 2), -1) # [bsize, out_scales, 17, k, inst]
+        _, nearest_inst = torch.min(dist, -1)  # [bsize, out_scales, 17, k]
+        
+        # get bias 
+        inst = nearest_inst.unsqueeze(-1).unsqueeze(-1).expand(-1, -1, -1, -1, -1, 2)
+        bias = torch.gather(bias, 4, inst).suqeeze(4) # [bsize, out_scales, 17, k, 2]
+
+        # get ignore
+        bsize = roi_candidates.shape[0]
+        mask_flatten = mask.reshape(bsize, -1)
+        roi_candidates_flatten = roi_candidates[:,:,:,:,0] + roi_candidates[:,:,:,:,1] * config.out_size  # [bsize, out_scales, 17, k]
+        roi_candidates_flatten = roi_candidates_flatten.reshape(bsize, -1)  # [bsize, -1]
+        ignore = torch.gather(mask_flatten, 1, roi_candidates_flatten.int())  # [bsize, out_scales * 17 * k]
+        ignore = ignore.reshape(bsize, -1, config.num_pts, config.top_k_candidates)  # [bsize, out_scales, 17, k]
+        return conf, bias, nearest_inst, ignore
 
 if __name__=='__main__':
     import torch 
