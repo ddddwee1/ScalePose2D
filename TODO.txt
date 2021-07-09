@@ -19,8 +19,8 @@ Sampling:
     Online infer the labels (confidence, bias, instance index)                          - done 
 
 GCN:
-    Attention mechanism (Multi-head or single-head? Should we add a mask to constrain the shape of input size?)
-    May need to add position encoding 
+    Attention mechanism                             - done 
+    May need to add position encoding               - done 
 
 GCN Loss:
     Confidence (whether GT is included in the patch)
