@@ -14,6 +14,9 @@ Just install pytorch, install torchsul, and build the fastgaus.
 
 ## Usage 
 
+1. Generate the masks using dump.py (included in the resource link)
+
+2. Train the network 
 ```
 python distrib.py 
 ```
