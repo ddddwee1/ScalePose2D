@@ -23,7 +23,9 @@ GCN:
     May need to add position encoding               - done 
 
 GCN Loss:
-    Confidence (whether GT is included in the patch)
-    Bias (offset of the joint. What kind of normalization is needed? Or just compute the original pixel shift?)
-    Feature (triplet or circle loss can be used here.)
+    Confidence (whether GT is included in the patch)            - done 
+    Bias (shift based on config.out_size)                       - done 
+    Feature (triplet or circle loss can be used here.)          - done 
+
+Make it a unified structure 
 

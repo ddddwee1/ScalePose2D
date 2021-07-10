@@ -60,3 +60,28 @@ class ModelWithLoss(M.Model):
 			all_losses.append(hm)
 		return all_losses, all_hmaps   # May add some extra outputs for the GCN part in the future 
 
+class CircleLoss(M.Model):
+	def initialize(self, gamma, m):
+		self.gamma = gamma 
+		self.m = m 
+	def forward(self, x, pairwise):
+		# pairwise: B*N*N matrix, 1 same, 0 ignore, -1 different 
+		# x: B*N*F matrix
+		x = x / torch.norm(x, 2, dim=-1, keepdim=True)
+		sim = torch.einsum('ijk,ikl->ijl', x, x.transpose(-1, -2))
+		alpha = - torch.clamp(pairwise * (self.m - sim) + torch.clamp(pairwise, 0), 0) * pairwise
+		delta = 0.5 + pairwise * (0.5 - self.m)
+		total = torch.exp(self.gamma * alpha * (sim - delta))  # B*N*N
+		total = torch.sum(total, dim=(1,2))
+		loss = torch.log(1 + total).mean()
+		return loss 
+
+class BiasLoss(M.Model):
+	def forward(self, x, label):
+		loss = torch.mean(torch.pow(x - label, 2))
+		return loss 
+
+class ConfLoss(M.Model):
+	def forward(self, x, label):
+		loss = F.binary_cross_entropy_with_logits(x, label)
+		return loss 
