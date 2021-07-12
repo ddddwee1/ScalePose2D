@@ -28,4 +28,6 @@ GCN Loss:
     Feature (triplet or circle loss can be used here.)          - done 
 
 Make it a unified structure 
-
+    A unified module for all the losses             - done 
+    Training code with initialization               
+    

@@ -3,6 +3,7 @@ import TorchSUL.Model as M
 import config
 import torch
 import torch.nn as nn
+import torch.nn.functional as F 
 import torchvision
 
 class DepthToSpace(M.Model):
@@ -94,6 +95,7 @@ class SamplingLayer(M.Model):
         # The inp_scale should be emitted here, because in testing we use only one scale
         # Make the GCN consistent between training and testing. The input scale should be randomly sampled from possible values
         k = config.top_k_candidates
+        bsize = hmap_list[0].shape[0]
         roi_candidates, candidate_sizes, _ = self.get_joint_candidates(hmap_list, k=k)
 
         all_fhmap = []   # [out_scales, bsize, 17*k, channel_sum]
@@ -117,8 +119,7 @@ class SamplingLayer(M.Model):
             box = self._get_bbox(coord, config.roi_box_size, size, w)
             box = box.reshape(box.shape[0], -1, 4)
             img_cropped = torchvision.ops.roi_align(img, list(box), 13)
-            img_cropped = img_cropped.reshape(
-                bsize, config.num_pts*k, -1)  # [bsize, 17*k, chn*13*13]
+            img_cropped = img_cropped.reshape(bsize, config.num_pts*k, -1)  # [bsize, 17*k, chn*13*13]
             scale_fhmap.append(img_cropped)
 
             scale_fhmap = torch.cat(scale_fhmap, dim=-1)
@@ -138,12 +139,12 @@ class LabelProducer(M.Model):
         # produce 3 labels: confidence, bias, ID tag; and flag: ignore (if the joint locates on unlabelled instances)
         # roi_candidates: [bsize, out_scales, 17, k, 2]
         # candidate_sizes: [out_scales]
-        # gt_pts: [max_inst, bsize, 3]
+        # gt_pts: [bsize, max_inst, 17, 3]
         # mask: [bsize, out_size, out_size]
 
-        gt_pts = gt_pts.permute([1, 0, 2])
-        pts_xy = gt_pts[:, :, :2]   # xy [bsize, inst, 2]
-        pts_vis = gt_pts[:, :, 2:3]  # vis: [bsize, inst, 1]; 0 for invisible, 1 for visible
+        gt_pts = gt_pts.permute([0, 2, 1, 3])
+        pts_xy = gt_pts[:, :, :, :2]   # xy [bsize, 17, inst, 2]
+        pts_vis = gt_pts[:, :, :, 2:3]  # vis: [bsize, 17, inst, 1]; 0 for invisible, 1 for visible
 
         # get confidence
         scales = config.out_size / candidate_sizes
@@ -153,8 +154,8 @@ class LabelProducer(M.Model):
         right_lower = roi_candidates + config.roi_box_size * scales        # [bsize, out_scales, 17, k, 1, 2]
         left_upper = left_upper.unsqueeze(4)
         right_lower = right_lower.unsqueeze(4)
-        pts_xy = pts_xy.unsqueeze(1).unsqueeze(1).unsqueeze(1)  # [bsize, 1, 1, 1, inst, 2]
-        pts_vis = pts_vis.unsqueeze(1).unsqueeze(1).unsqueeze(1)  # [bsize, 1, 1, 1, inst, 1]
+        pts_xy = pts_xy.unsqueeze(1).unsqueeze(3)  # [bsize, 1, 17, 1, inst, 2]
+        pts_vis = pts_vis.unsqueeze(1).unsqueeze(3)  # [bsize, 1, 17, 1, inst, 1]
         conf, _ = torch.max(torch.prod((pts_xy < right_lower).float() * (pts_xy > left_upper).float() * pts_vis.float(), dim=-1), -1)  # [bsize, out_scales, 17, k]
 
         # get id_tag
@@ -168,8 +169,8 @@ class LabelProducer(M.Model):
 
         # get ignore
         bsize = roi_candidates.shape[0]
-        mask_flatten = mask.reshape(bsize, -1)  # [bsize, out_scales, 17, k]
-        roi_candidates_flatten = roi_candidates[:, :, :, :, 0] + roi_candidates[:, :, :, :, 1] * config.out_size
+        mask_flatten = mask.reshape(bsize, -1)  
+        roi_candidates_flatten = roi_candidates[:, :, :, :, 0] + roi_candidates[:, :, :, :, 1] * config.out_size  # [bsize, out_scales, 17, k]
         roi_candidates_flatten = roi_candidates_flatten.reshape(bsize, -1)  # [bsize, -1]
         ignore = torch.gather(mask_flatten, 1, roi_candidates_flatten.int())  # [bsize, out_scales * 17 * k]
         ignore = ignore.reshape(bsize, -1, config.num_pts, config.top_k_candidates)  # [bsize, out_scales, 17, k]
@@ -254,7 +255,9 @@ class PosEmbed(M.Model):
         return torch.cat([x, pos_emb], dim=-1)
 
     def forward(self, x):
-        return torch.cat([x, self.pos_emb], dim=-1)
+        B, N, K, topk, chn = x.shape
+        pos_emb = self.pos_emb.expand(B, N, -1, topk, -1)
+        return torch.cat([x, pos_emb], dim=-1)
 
 class RefineNet(M.Model):
     def initialize(self, feat_dim, num_heads, pos_embed, depth, attn_drop=0.0, drop_path=0.0):
@@ -285,8 +288,11 @@ class RefineNet(M.Model):
         conf = self.out_conf(x)
         bias = self.out_bias(x)
         feat = self.out_feat(x)
-        return conf, bias, feat
 
+        conf = conf.reshape(bsize, n_scales, config.num_pts, config.top_k_candidates)
+        bias = bias.reshape(bsize, n_scales, config.num_pts, config.top_k_candidates, 2)
+        feat = feat.reshape(bsize, n_scales, config.num_pts, config.top_k_candidates, 128)
+        return conf, bias, feat
 
 if __name__ == '__main__':
     import torch
