@@ -9,6 +9,11 @@ num_pts = 17
 roi_box_size = 2
 top_k_candidates = 40
 
+refine_dim = 512
+num_heads = 4
+pos_embed = True 
+depth = 2 
+
 # point index 
 COCO_index = np.int64([0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16])
 COCO_reorder = np.int64([0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16])

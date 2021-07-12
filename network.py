@@ -103,10 +103,11 @@ class SamplingLayer(M.Model):
             scale_fhmap = []
             for fmap, hmap in zip(fmap_list, hmap_list):
                 w = fmap.shape[3]
+                chn = fmap.shape[1]
                 # [bsize, 17, k, 4]
                 box = self._get_bbox(coord, config.roi_box_size, size, w)
                 box = box.reshape(box.shape[0], -1, 4)
-                fmap_cropped = torchvision.ops.roi_align(fmap, list(box), min(12, max(4, 8*w//size)))  # [bsize*17*k, chn, 7, 7]
+                fmap_cropped = torchvision.ops.roi_align(fmap, list(box), int(2048 * 3 // chn))  # [bsize*17*k, chn, 7, 7]
                 fmap_cropped = fmap_cropped.reshape(bsize, config.num_pts*k, -1)  # [bsize, 17*k, chn*7*7]
 
                 w = hmap.shape[3]
@@ -129,7 +130,7 @@ class SamplingLayer(M.Model):
         all_fhmap = torch.stack(all_fhmap, dim=1)  # [bsize, out_scales, 17*k, chn_sum]
         all_fhmap = all_fhmap.reshape(bsize, all_fhmap.shape[1], config.num_pts, k, all_fhmap.shape[-1])  # [bsize, out_scales, 17, k, chn_sum]
         roi_candidates = torch.stack(roi_candidates, dim=1)  # [bsize, out_scales, 17, k, 2]
-        candidate_sizes = torch.stack(candidate_sizes)  # [out_scales]
+        # candidate_sizes = torch.stack(candidate_sizes)  # [out_scales]
         return all_fhmap, roi_candidates, candidate_sizes
 
 # bsize*17*k can be the data length, apply attention on this dimension

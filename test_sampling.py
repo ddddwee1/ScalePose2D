@@ -53,7 +53,12 @@ for i in range(3):
 		pickle.dump(hmaps[i][j].cpu().detach().numpy(), open('outputs/hmap_%d_%d.pkl'%(i,j), 'wb'))
 		pickle.dump(fmaps[i][j].cpu().detach().numpy(), open('outputs/fmap_%d_%d.pkl'%(i,j), 'wb'))
 
-sampling(hmaps[0], fmaps[0], img)
+all_fhmap, _, _ = sampling(hmaps[0], fmaps[0], img)
+print(all_fhmap.shape)
+all_fhmap, _, _ = sampling(hmaps[1], fmaps[1], img)
+print(all_fhmap.shape)
+all_fhmap, _, _ = sampling(hmaps[2], fmaps[2], img)
+print(all_fhmap.shape)
 
 # for f,h in zip(fmaps, hmaps):
 # 	print(f[0].shape, f[1].shape, f[2].shape, h[0].shape, h[1].shape, h[2].shape)

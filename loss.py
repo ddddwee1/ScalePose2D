@@ -145,7 +145,7 @@ class UnifiedNet(M.Model):
 			crops, centers, sizes = self.sample_layer(all_hmaps[i], all_fmaps[i], x)
 			conf_label, bias_label, inst_label, ignore = self.label_generator(centers, sizes, pts, mask)
 			out_conf, out_bias, out_feat = self.refine(crops)
-			loss_feat = self.circle(out_conf, inst_label, ignore)
+			loss_feat = self.circle(out_feat, inst_label, ignore)
 			loss_bias = self.biasls(out_bias, bias_label, ignore)
 			loss_conf = self.confls(out_conf, conf_label, ignore)
 			feat_losses.append(loss_feat)
