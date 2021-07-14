@@ -13,6 +13,7 @@ import loss
 from time import gmtime, strftime
 import random 
 import visutil 
+import pickle 
 
 def main():
 	ngpus_per_node = torch.cuda.device_count()
@@ -37,7 +38,7 @@ def main_worker(gpu, ngpus_per_node):
 	saver.restore('./model/')
 
 	refiner = network.RefineNet(config.refine_dim, config.num_heads, config.pos_embed, config.depth)
-	x = torch.zeros(1, config.top_k_candidates, config.num_pts, config.top_k_candidates, 132030)
+	x = torch.zeros(1, len(config.inp_scales), config.num_pts, config.top_k_candidates, 60350)
 	refiner(x)
 
 	sample_layer = network.SamplingLayer()
@@ -51,15 +52,16 @@ def main_worker(gpu, ngpus_per_node):
 	print('Model initialized.')
 
 	# get loader 
-	loader, sampler = datareader.get_train_dataloader(8)
+	loader, sampler = datareader.get_train_dataloader(6)
 	optim = torch.optim.Adam(model.parameters(), lr=config.init_lr)
 
 	for e in range(config.max_epoch):
 		print('Replica:%d Epoch:%d'%(gpu, e))
 		sampler.set_epoch(e)
 		for i, (img, hmap, mask, pts) in enumerate(loader):
+			pickle.dump([img.cpu().numpy(), hmap.cpu().numpy(), mask.cpu().numpy(), pts.cpu().numpy()], open('inp_sample.pkl','wb'))
 			optim.zero_grad()
-			hmap_loss, feat_losses, bias_losses, conf_losses = model(img, hmap, mask, pts)
+			hmap_loss, feat_losses, bias_losses, conf_losses, outs = model(img, hmap, mask, pts)
 
 			hm_large = hmap_loss[0]
 			hm_medium = hmap_loss[1]
@@ -86,11 +88,11 @@ def main_worker(gpu, ngpus_per_node):
 			optim.step()
 			lr = optim.param_groups[0]['lr']
 
-			# if i%100==0 and gpu==0:
-			# 	visutil.vis_batch(img, outs[0], './outputs/%d_out0.jpg'%i)
-			# 	visutil.vis_batch(img, outs[1], './outputs/%d_out1.jpg'%i)
-			# 	visutil.vis_batch(img, outs[2], './outputs/%d_out2.jpg'%i)
-			# 	visutil.vis_batch(img, hmap, './outputs/%d_gt.jpg'%i)
+			if i%100==0 and gpu==0:
+				visutil.vis_batch(img, outs[0], './outputs/%d_out0.jpg'%i)
+				visutil.vis_batch(img, outs[1], './outputs/%d_out1.jpg'%i)
+				visutil.vis_batch(img, outs[2], './outputs/%d_out2.jpg'%i)
+				visutil.vis_batch(img, hmap, './outputs/%d_gt.jpg'%i)
 			# 	print(outs.max(), outs.min(), hmap.max(), hmap.min(), mask.max(), mask.min())
 
 			if i%20==0:

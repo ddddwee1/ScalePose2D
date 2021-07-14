@@ -5,6 +5,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F 
 import torchvision
+import numpy as np 
 
 class DepthToSpace(M.Model):
     def initialize(self, block_size):
@@ -107,7 +108,7 @@ class SamplingLayer(M.Model):
                 # [bsize, 17, k, 4]
                 box = self._get_bbox(coord, config.roi_box_size, size, w)
                 box = box.reshape(box.shape[0], -1, 4)
-                fmap_cropped = torchvision.ops.roi_align(fmap, list(box), int(2048 * 3 // chn))  # [bsize*17*k, chn, 7, 7]
+                fmap_cropped = torchvision.ops.roi_align(fmap, list(box), int(2048 * 2 // chn))  # [bsize*17*k, chn, 7, 7]
                 fmap_cropped = fmap_cropped.reshape(bsize, config.num_pts*k, -1)  # [bsize, 17*k, chn*7*7]
 
                 w = hmap.shape[3]
@@ -124,13 +125,12 @@ class SamplingLayer(M.Model):
             scale_fhmap.append(img_cropped)
 
             scale_fhmap = torch.cat(scale_fhmap, dim=-1)
-            print(scale_fhmap.shape)
             all_fhmap.append(scale_fhmap)
 
         all_fhmap = torch.stack(all_fhmap, dim=1)  # [bsize, out_scales, 17*k, chn_sum]
         all_fhmap = all_fhmap.reshape(bsize, all_fhmap.shape[1], config.num_pts, k, all_fhmap.shape[-1])  # [bsize, out_scales, 17, k, chn_sum]
         roi_candidates = torch.stack(roi_candidates, dim=1)  # [bsize, out_scales, 17, k, 2]
-        # candidate_sizes = torch.stack(candidate_sizes)  # [out_scales]
+        candidate_sizes = torch.from_numpy(np.float32(candidate_sizes)).to(all_fhmap.device)  # [out_scales]
         return all_fhmap, roi_candidates, candidate_sizes
 
 # bsize*17*k can be the data length, apply attention on this dimension
@@ -148,15 +148,17 @@ class LabelProducer(M.Model):
         pts_vis = gt_pts[:, :, :, 2:3]  # vis: [bsize, 17, inst, 1]; 0 for invisible, 1 for visible
 
         # get confidence
+        # print(candidate_sizes)
         scales = config.out_size / candidate_sizes
         scales = scales.unsqueeze(-1).unsqueeze(-1).unsqueeze(-1)
         roi_candidates = roi_candidates * scales
+        # print(roi_candidates.max(), roi_candidates.min())
         left_upper = roi_candidates - config.roi_box_size * scales
         right_lower = roi_candidates + config.roi_box_size * scales        # [bsize, out_scales, 17, k, 1, 2]
         left_upper = left_upper.unsqueeze(4)
         right_lower = right_lower.unsqueeze(4)
         pts_xy = pts_xy.unsqueeze(1).unsqueeze(3)  # [bsize, 1, 17, 1, inst, 2]
-        pts_vis = pts_vis.unsqueeze(1).unsqueeze(3)  # [bsize, 1, 17, 1, inst, 1]
+        pts_vis = (pts_vis>0).float().unsqueeze(1).unsqueeze(3)  # [bsize, 1, 17, 1, inst, 1]   # here the original vis can be 1,2or3, need to make them all 1
         conf, _ = torch.max(torch.prod((pts_xy < right_lower).float() * (pts_xy > left_upper).float() * pts_vis.float(), dim=-1), -1)  # [bsize, out_scales, 17, k]
 
         # get id_tag
@@ -166,14 +168,14 @@ class LabelProducer(M.Model):
 
         # get bias
         inst = nearest_inst.unsqueeze(-1).unsqueeze(-1).expand(-1, -1, -1, -1, -1, 2)
-        bias = torch.gather(bias, 4, inst).suqeeze(4)  # [bsize, out_scales, 17, k, 2]
+        bias = torch.gather(bias, 4, inst).squeeze(4)  # [bsize, out_scales, 17, k, 2]
 
         # get ignore
         bsize = roi_candidates.shape[0]
         mask_flatten = mask.reshape(bsize, -1)  
-        roi_candidates_flatten = roi_candidates[:, :, :, :, 0] + roi_candidates[:, :, :, :, 1] * config.out_size  # [bsize, out_scales, 17, k]
+        roi_candidates_flatten = torch.floor(roi_candidates[:, :, :, :, 0]) + torch.floor(roi_candidates[:, :, :, :, 1]) * config.out_size  # [bsize, out_scales, 17, k]
         roi_candidates_flatten = roi_candidates_flatten.reshape(bsize, -1)  # [bsize, -1]
-        ignore = torch.gather(mask_flatten, 1, roi_candidates_flatten.int())  # [bsize, out_scales * 17 * k]
+        ignore = torch.gather(mask_flatten, 1, roi_candidates_flatten.long())  # [bsize, out_scales * 17 * k]
         ignore = ignore.reshape(bsize, -1, config.num_pts, config.top_k_candidates)  # [bsize, out_scales, 17, k]
         return conf, bias, nearest_inst, ignore
 
@@ -188,7 +190,6 @@ class Attention(M.Model):
         self.proj = M.Dense(dim)
 
     def forward(self, x, return_attn=False):
-        # print(x.shape)
         qkv = self.qkv(x)
         B, N, _ = qkv.shape
         qkv = qkv.reshape(B, N, 3, self.num_heads, self.head_dim).permute(2, 0, 3, 1, 4)
@@ -206,7 +207,7 @@ class Attention(M.Model):
 
 class MLP(M.Model):
     def initialize(self, dim, mlp_ratio):
-        self.fc1 = M.Dense(dim*mlp_ratio, usebias=True, activation=M.PARAM_GELU)
+        self.fc1 = M.Dense(int(dim*mlp_ratio), usebias=True, activation=M.PARAM_GELU)
         self.fc2 = M.Dense(dim)
 
     def forward(self, x):
@@ -269,7 +270,7 @@ class RefineNet(M.Model):
         self.fc1 = M.Dense(feat_dim)
         self.attn_blocks = nn.ModuleList()
         for i in range(depth):
-            self.attn_blocks.append(AttentionBlock(feat_dim, num_heads, attn_drop, drop_path))
+            self.attn_blocks.append(AttentionBlock(feat_dim, num_heads, attn_drop=attn_drop, drop_path=drop_path))
 
         self.fc2 = M.Dense(feat_dim)
         self.out_conf = M.Dense(1)
@@ -283,6 +284,7 @@ class RefineNet(M.Model):
             x = self.pos_embed(x)
 
         x = x.reshape(bsize, n_scales*config.num_pts * config.top_k_candidates, -1)
+        x = self.fc1(x)
         for blk in self.attn_blocks:
             x = blk(x)
         x = self.fc2(x)

@@ -1,3 +1,4 @@
+from os import altsep
 import torch 
 from TorchSUL import Model as M 
 import torch.nn.functional as F
@@ -41,7 +42,7 @@ class ModelWithLoss(M.Model):
 		for i in range(len(config.inp_scales)):
 			scale = config.inp_scales[i]
 			inp = F.interpolate(img, (scale, scale))
-			outs = self.model(inp)  # 512 -> 64, 256 -> 64, 128 -> 64
+			outs = self.model.run(inp)  # 512 -> 64, 256 -> 64, 128 -> 64
 			o3, o2, o1, f3, f2, f1 = outs 
 			out_hmap = outs[i]
 			# print(out_hmap.shape, hmap.shape, mask.unsqueeze(1).shape)
@@ -90,9 +91,14 @@ class CircleLoss(M.Model):
 		# x: B*N*F matrix
 		x = x / torch.norm(x, 2, dim=-1, keepdim=True)
 		sim = torch.einsum('ijk,ikl->ijl', x, x.transpose(-1, -2))
-		alpha = - torch.clamp(pairwise * (self.m - sim) + torch.clamp(pairwise, 0), 0) * pairwise
-		delta = 0.5 + pairwise * (0.5 - self.m)
-		total = torch.exp(self.gamma * alpha * (sim - delta))  # B*N*N
+		# print('sim',sim.max(), sim.min())
+		# alpha = - torch.clamp(pairwise * (self.m - sim) + torch.clamp(pairwise, 0), 0) * pairwise
+		alpha = -pairwise   # may add scaling factor later, but use this for now 
+		delta = torch.clamp(pairwise, 0) * self.m
+		total = self.gamma * alpha * sim
+		# print('total',total.max(), total.min(), self.gamma, alpha.max(), alpha.min())
+		total = torch.exp(total)  # B*N*N
+		
 		total = torch.sum(total, dim=(1,2))
 		loss = torch.log(1 + total).mean()
 		return loss 
@@ -117,13 +123,14 @@ class CircleLoss(M.Model):
 
 class BiasLoss(M.Model):
 	def forward(self, x, label, ignore):
-		loss = torch.mean(torch.pow(x - label, 2) * (1 - ignore).unsqueeze(-1))
+		loss = torch.sum(torch.pow(x - label, 2) * (1 - ignore).unsqueeze(-1)) / torch.sum(1 - ignore) / config.out_size / config.out_size
 		return loss 
 
 class ConfLoss(M.Model):
 	def forward(self, x, label, ignore):
 		loss = F.binary_cross_entropy_with_logits(x, label, reduction='none') 
 		loss = loss * (1 - ignore)
+		loss = loss.mean()
 		return loss 
 
 class UnifiedNet(M.Model):
@@ -132,7 +139,7 @@ class UnifiedNet(M.Model):
 		self.refine = refine 
 		self.sample_layer = sample_layer
 		self.label_generator = label_generator
-		self.circle = CircleLoss(128, 0.3)
+		self.circle = CircleLoss(16, 0.3)
 		self.biasls = BiasLoss()
 		self.confls = ConfLoss()
 
@@ -144,12 +151,14 @@ class UnifiedNet(M.Model):
 		for i in range(len(all_hmaps)):
 			crops, centers, sizes = self.sample_layer(all_hmaps[i], all_fmaps[i], x)
 			conf_label, bias_label, inst_label, ignore = self.label_generator(centers, sizes, pts, mask)
+			# print('conf', conf_label.max(), conf_label.min(), ignore.max(), ignore.min())
 			out_conf, out_bias, out_feat = self.refine(crops)
-			loss_feat = self.circle(out_feat, inst_label, ignore)
+			loss_feat = self.circle(out_feat, inst_label, 1 - (1- ignore)*conf_label)  # only consider the joints: ignore=0 && conf=1
 			loss_bias = self.biasls(out_bias, bias_label, ignore)
 			loss_conf = self.confls(out_conf, conf_label, ignore)
 			feat_losses.append(loss_feat)
 			bias_losses.append(loss_bias)
 			conf_losses.append(loss_conf)
-		return hmap_losses, feat_losses, bias_losses, conf_losses
+		out_hmaps = [hms[i] for i,hms in enumerate(all_hmaps)]
+		return hmap_losses, feat_losses, bias_losses, conf_losses, out_hmaps
 

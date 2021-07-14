@@ -12,7 +12,7 @@ top_k_candidates = 40
 refine_dim = 512
 num_heads = 4
 pos_embed = True 
-depth = 2 
+depth = 0 
 
 # point index 
 COCO_index = np.int64([0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16])
@@ -30,13 +30,13 @@ blur_type = ['vertical','horizontal','mean']
 
 # training 
 max_iter = 50000
-max_epoch = 300
+max_epoch = 100
 init_lr = 0.001
 iter_density_pretrain = 50
 decay = 0.0001
 momentum = 0.9
 lr_step = 35000
-lr_epoch = [200,250]
+lr_epoch = [50,75]
 save_interval = 1
 
 # extra 
